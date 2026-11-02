@@ -197,3 +197,26 @@ test('unpaid Checkout completion does not grant Pro access', async () => {
   assert.equal(getBillingStatus(user).isPaid, false)
   await db.destroy()
 })
+
+test('failed user-state persistence rolls back the event claim for Stripe retry', async () => {
+  const subscription = {
+    status: 'active',
+    customer: 'cus_missing',
+    metadata: { userId: 'missing_user' },
+    current_period_end: 1893456000,
+  }
+  const { db, billing, sign } = await setup({ subscription })
+  const event = sign({
+    id: 'evt_missing_user',
+    type: 'customer.subscription.updated',
+    data: { object: { id: 'sub_missing', ...subscription } },
+  })
+
+  await assert.rejects(
+    billing.handleWebhook(event.body, event.signature),
+    err => err.statusCode === 500
+  )
+  assert.equal(await db('processedStripeEvents').count({ count: '*' }).first().then(row => Number(row.count)), 0)
+
+  await db.destroy()
+})
