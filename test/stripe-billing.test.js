@@ -114,7 +114,7 @@ test('verified checkout activates Pro; cancellation and failed payments revoke i
   const completed = sign({
     id: 'evt_1',
     type: 'checkout.session.completed',
-    data: { object: { mode: 'subscription', client_reference_id: 'user_1', subscription: 'sub_1', customer: 'cus_1' } },
+    data: { object: { mode: 'subscription', payment_status: 'paid', client_reference_id: 'user_1', subscription: 'sub_1', customer: 'cus_1' } },
   })
   const res = await billing.handleWebhook(completed.body, completed.signature)
   assert.equal(res.handled, true)
@@ -173,5 +173,27 @@ test('webhook event IDs are idempotent under repeated delivery', async () => {
   assert.equal(await db('processedStripeEvents').count({ count: '*' }).first().then(row => Number(row.count)), 1)
   assert.equal(calls.updated.length, 1, 'duplicate delivery must not repeat side effects')
 
+  await db.destroy()
+})
+
+test('unpaid Checkout completion does not grant Pro access', async () => {
+  const subscription = {
+    status: 'active',
+    customer: 'cus_1',
+    metadata: { userId: 'user_1' },
+    current_period_end: 1893456000,
+  }
+  const { db, billing, sign } = await setup({ subscription })
+  const unpaid = sign({
+    id: 'evt_unpaid_checkout',
+    type: 'checkout.session.completed',
+    data: { object: { mode: 'subscription', payment_status: 'unpaid', client_reference_id: 'user_1', subscription: 'sub_1' } },
+  })
+
+  const result = await billing.handleWebhook(unpaid.body, unpaid.signature)
+  const user = await db('users').where('id', 'user_1').first()
+
+  assert.equal(result.ignored, true)
+  assert.equal(getBillingStatus(user).isPaid, false)
   await db.destroy()
 })
