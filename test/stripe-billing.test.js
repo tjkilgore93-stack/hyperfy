@@ -220,3 +220,82 @@ test('failed user-state persistence rolls back the event claim for Stripe retry'
 
   await db.destroy()
 })
+
+
+test('concurrent deliveries claim one event and apply one subscription mutation', async () => {
+  const subscription = {
+    status: 'active',
+    customer: 'cus_1',
+    metadata: { userId: 'user_1' },
+    current_period_end: 1893456000,
+  }
+  const { db, billing, calls, sign } = await setup({ subscription })
+  const event = sign({
+    id: 'evt_concurrent',
+    type: 'customer.subscription.updated',
+    data: { object: { id: 'sub_1', ...subscription } },
+  })
+
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () => billing.handleWebhook(event.body, event.signature))
+  )
+
+  assert.equal(results.filter(result => result.handled).length, 1)
+  assert.equal(results.filter(result => result.duplicate).length, 9)
+  const ledgerRow = await db('processedStripeEvents')
+    .where({ eventId: 'evt_concurrent' })
+    .first()
+  assert.ok(ledgerRow, 'one ledger row should own the event ID')
+  assert.equal(calls.updated.length, 1, 'only the winning delivery should notify the live session')
+
+  const user = await db('users').where('id', 'user_1').first()
+  assert.equal(user.stripeSubscriptionId, 'sub_1')
+  assert.equal(getBillingStatus(user).isPaid, true)
+
+  await db.destroy()
+})
+
+test('a failed user update rolls back the event claim and allows Stripe retry', async () => {
+  const subscription = {
+    status: 'active',
+    customer: 'cus_1',
+    metadata: { userId: 'user_1' },
+    current_period_end: 1893456000,
+  }
+  const { db, billing, calls, sign } = await setup({ subscription })
+  const event = sign({
+    id: 'evt_update_rollback',
+    type: 'customer.subscription.updated',
+    data: { object: { id: 'sub_1', ...subscription } },
+  })
+
+  await db.raw(`
+    CREATE TRIGGER reject_subscription_update
+    BEFORE UPDATE ON users
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated subscription persistence failure');
+    END
+  `)
+
+  await assert.rejects(
+    billing.handleWebhook(event.body, event.signature),
+    /simulated subscription persistence failure/
+  )
+  const claimedAfterFailure = await db('processedStripeEvents')
+    .where({ eventId: 'evt_update_rollback' })
+    .first()
+  assert.equal(claimedAfterFailure, undefined, 'failed transaction must not retain the event claim')
+  assert.equal(calls.updated.length, 0, 'failed transaction must not emit a live-session update')
+
+  await db.raw('DROP TRIGGER reject_subscription_update')
+  const retry = await billing.handleWebhook(event.body, event.signature)
+  assert.equal(retry.handled, true, 'Stripe retry should be able to claim and process the event')
+
+  const ledgerRow = await db('processedStripeEvents')
+    .where({ eventId: 'evt_update_rollback' })
+    .first()
+  assert.ok(ledgerRow)
+  assert.equal(calls.updated.length, 1)
+
+  await db.destroy()
+})
