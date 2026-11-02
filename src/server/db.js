@@ -474,4 +474,13 @@ const migrations = [
       table.text('equippedCosmetics').nullable()
     })
   },
+  // record Stripe webhook event IDs for transactional, cross-database idempotency
+  async db => {
+    await db.schema.createTable('processedStripeEvents', table => {
+      table.string('eventId').primary()
+      table.string('eventType').notNullable()
+      table.timestamp('processedAt', { useTz: true }).notNullable().defaultTo(db.fn.now())
+    })
+  },
+
 ]
