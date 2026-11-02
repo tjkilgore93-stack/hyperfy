@@ -9,6 +9,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/perf.yml"
+      - "tests/**"
+      - "playwright.config.js"
 
 permissions:
   contents: read
@@ -102,6 +104,67 @@ jobs:
             fi
           } | tee perf-results/metrics.txt
 
+      - name: Install Playwright and Chromium
+        if: steps.build_step.outcome == 'success'
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.52.0
+          npx playwright install --with-deps chromium
+
+      - name: Start isolated Hyperfy test world
+        if: steps.build_step.outcome == 'success'
+        id: server_start
+        env:
+          NODE_ENV: test
+          WORLD: ${{ runner.temp }}/hyperfy-e2e-world
+          PORT: "3000"
+          JWT_SECRET: hyperfy-ci-test-secret-32-characters-minimum
+          ADMIN_CODE: hyperfy-ci-only
+          SAVE_INTERVAL: "60"
+          PUBLIC_MAX_UPLOAD_SIZE: "12"
+          PUBLIC_WS_URL: ws://127.0.0.1:3000/ws
+          PUBLIC_API_URL: http://127.0.0.1:3000/api
+          ASSETS: local
+          ASSETS_BASE_URL: http://127.0.0.1:3000/assets
+          DB_URI: local
+          CLEAN: "false"
+          BILLING_ENABLED: "false"
+        shell: bash
+        run: |
+          mkdir -p "$WORLD"
+          nohup npm start > "${{ runner.temp }}/hyperfy-server.log" 2>&1 &
+          echo $! > "${{ runner.temp }}/hyperfy-server.pid"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/health > /dev/null; then
+              echo "Hyperfy test server is healthy."
+              exit 0
+            fi
+            if ! kill -0 "$(cat "${{ runner.temp }}/hyperfy-server.pid")" 2>/dev/null; then
+              echo "::error::Hyperfy server exited before becoming healthy."
+              cat "${{ runner.temp }}/hyperfy-server.log"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::error::Hyperfy test server did not become healthy within 120 seconds."
+          cat "${{ runner.temp }}/hyperfy-server.log"
+          exit 1
+
+      - name: Run WebGL engine diagnostics
+        if: steps.build_step.outcome == 'success' && steps.server_start.outcome == 'success'
+        id: engine_test
+        run: npx playwright test tests/engine-diagnostics.spec.js
+
+      - name: Stop isolated Hyperfy test world
+        if: always()
+        shell: bash
+        run: |
+          pid_file="${{ runner.temp }}/hyperfy-server.pid"
+          if [[ -f "$pid_file" ]]; then
+            kill "$(cat "$pid_file")" 2>/dev/null || true
+          fi
+
       - name: Upload build performance artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -110,11 +173,14 @@ jobs:
           path: |
             build/
             perf-results/
+            test-results/
+            playwright-report/
+            ${{ runner.temp }}/hyperfy-server.log
           if-no-files-found: warn
           retention-days: 14
 
       - name: Notify ChatOps about build or rendering pipeline failure
-        if: failure() || steps.build_step.outcome == 'failure'
+        if: failure() || steps.build_step.outcome == 'failure' || steps.server_start.outcome == 'failure' || steps.engine_test.outcome == 'failure'
         continue-on-error: true
         env:
           NOTIFICATIONS_WEBHOOK_URL: ${{ secrets.NOTIFICATIONS_WEBHOOK_URL }}
@@ -125,6 +191,8 @@ jobs:
           ALERT_WORKFLOW: ${{ github.workflow }}
           ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ALERT_BUILD_OUTCOME: ${{ steps.build_step.outcome }}
+          ALERT_SERVER_OUTCOME: ${{ steps.server_start.outcome }}
+          ALERT_ENGINE_OUTCOME: ${{ steps.engine_test.outcome }}
         shell: bash
         run: |
           if [[ -z "$NOTIFICATIONS_WEBHOOK_URL" ]]; then
@@ -142,6 +210,8 @@ jobs:
             'Commit: ' + process.env.ALERT_SHA,
             'Workflow: ' + process.env.ALERT_WORKFLOW,
             'Build step outcome: ' + (process.env.ALERT_BUILD_OUTCOME || 'not reached'),
+            'Test server outcome: ' + (process.env.ALERT_SERVER_OUTCOME || 'not reached'),
+            'WebGL diagnostics outcome: ' + (process.env.ALERT_ENGINE_OUTCOME || 'not reached'),
             'Run: ' + process.env.ALERT_RUN_URL,
           ].join('\\n')
 
