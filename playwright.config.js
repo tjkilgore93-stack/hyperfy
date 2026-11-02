@@ -12,6 +12,9 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3000',
     browserName: 'chromium',
     headless: true,
+    launchOptions: {
+      args: ['--enable-webgl', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=swiftshader'],
+    },
     viewport: { width: 1440, height: 900 },
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
