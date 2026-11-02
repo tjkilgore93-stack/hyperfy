@@ -112,3 +112,61 @@ jobs:
             perf-results/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Notify ChatOps about build or rendering pipeline failure
+        if: failure() || steps.build_step.outcome == 'failure'
+        continue-on-error: true
+        env:
+          NOTIFICATIONS_WEBHOOK_URL: ${{ secrets.NOTIFICATIONS_WEBHOOK_URL }}
+          NOTIFICATIONS_WEBHOOK_PROVIDER: ${{ vars.NOTIFICATIONS_WEBHOOK_PROVIDER }}
+          ALERT_REPOSITORY: ${{ github.repository }}
+          ALERT_BRANCH: ${{ github.head_ref || github.ref_name }}
+          ALERT_SHA: ${{ github.sha }}
+          ALERT_WORKFLOW: ${{ github.workflow }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALERT_BUILD_OUTCOME: ${{ steps.build_step.outcome }}
+        shell: bash
+        run: |
+          if [[ -z "$NOTIFICATIONS_WEBHOOK_URL" ]]; then
+            echo "::warning::NOTIFICATIONS_WEBHOOK_URL is not configured; skipping ChatOps notification."
+            exit 0
+          fi
+
+          node --input-type=module <<'NODE' | curl --fail-with-body --silent --show-error \
+            -H "Content-Type: application/json" \
+            --data-binary @- "$NOTIFICATIONS_WEBHOOK_URL"
+          const provider = (process.env.NOTIFICATIONS_WEBHOOK_PROVIDER || 'discord').toLowerCase()
+          const details = [
+            'Repository: ' + process.env.ALERT_REPOSITORY,
+            'Branch: ' + process.env.ALERT_BRANCH,
+            'Commit: ' + process.env.ALERT_SHA,
+            'Workflow: ' + process.env.ALERT_WORKFLOW,
+            'Build step outcome: ' + (process.env.ALERT_BUILD_OUTCOME || 'not reached'),
+            'Run: ' + process.env.ALERT_RUN_URL,
+          ].join('\\n')
+
+          const title = 'Hyperfy CI failure detected'
+          let payload
+          if (provider === 'slack') {
+            payload = {
+              text: ':warning: *' + title + '*\\n' + details,
+              unfurl_links: false,
+            }
+          } else if (provider === 'discord') {
+            payload = {
+              username: 'Hyperfy CI Bot',
+              content: ':warning: **' + title + '**',
+              embeds: [{
+                title: 'Failed workflow run',
+                url: process.env.ALERT_RUN_URL,
+                description: details,
+                color: 16711680,
+              }],
+            }
+          } else {
+            console.error('Unsupported NOTIFICATIONS_WEBHOOK_PROVIDER: ' + provider)
+            process.exit(1)
+          }
+
+          process.stdout.write(JSON.stringify(payload))
+          NODE
