@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "src/**"
+      - "test/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/perf.yml"
@@ -32,6 +33,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run application test suite
+        run: npm test
 
       - name: Run production build
         id: build_step
