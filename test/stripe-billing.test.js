@@ -28,6 +28,11 @@ async function setup({ env = ENV, subscription } = {}) {
     t.string('stripeSubscriptionId')
     t.string('currentPeriodEnd')
   })
+  await db.schema.createTable('processedStripeEvents', t => {
+    t.string('eventId').primary()
+    t.string('eventType').notNullable()
+    t.timestamp('processedAt').notNullable().defaultTo(db.fn.now())
+  })
   await db('users').insert({ id: 'user_1', name: 'Operative' })
   const real = new Stripe('sk_test_dummy')
   const calls = { checkout: [], portal: [], updated: [] }
@@ -143,5 +148,30 @@ test('verified checkout activates Pro; cancellation and failed payments revoke i
   const portal = await billing.createPortal(user)
   assert.equal(portal.url, 'https://billing.stripe.com/p/session/test')
   assert.equal(calls.portal[0].customer, 'cus_1')
+  await db.destroy()
+})
+
+test('webhook event IDs are idempotent under repeated delivery', async () => {
+  const subscription = {
+    status: 'active',
+    customer: 'cus_1',
+    metadata: { userId: 'user_1' },
+    current_period_end: 1893456000,
+  }
+  const { db, billing, calls, sign } = await setup({ subscription })
+  const event = sign({
+    id: 'evt_duplicate',
+    type: 'customer.subscription.updated',
+    data: { object: { id: 'sub_1', ...subscription } },
+  })
+
+  const first = await billing.handleWebhook(event.body, event.signature)
+  const second = await billing.handleWebhook(event.body, event.signature)
+
+  assert.equal(first.handled, true)
+  assert.equal(second.duplicate, true)
+  assert.equal(await db('processedStripeEvents').count({ count: '*' }).first().then(row => Number(row.count)), 1)
+  assert.equal(calls.updated.length, 1, 'duplicate delivery must not repeat side effects')
+
   await db.destroy()
 })
