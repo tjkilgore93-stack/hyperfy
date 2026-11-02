@@ -153,9 +153,15 @@ export function createStripeBilling({ db, env = process.env, stripe: injectedStr
     let subscription = null
     let hintUserId = null
 
-    if (event.type === 'checkout.session.completed') {
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded' ||
+      event.type === 'checkout.session.async_payment_failed'
+    ) {
       const session = event.data.object
-      if (session.mode === 'subscription' && session.subscription) {
+      const paymentConfirmed = session.payment_status === 'paid' || session.payment_status === 'no_payment_required'
+      const asyncPaymentResult = event.type !== 'checkout.session.completed'
+      if (session.mode === 'subscription' && session.subscription && (paymentConfirmed || asyncPaymentResult)) {
         hintUserId = session.client_reference_id || session.metadata?.userId
         subscription = await retrieveSubscription(session.subscription)
       }
