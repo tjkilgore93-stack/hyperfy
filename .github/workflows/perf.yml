@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$WORLD"
-          nohup npm start > "${{ runner.temp }}/hyperfy-server.log" 2>&1 &
+          nohup node build/index.js > "${{ runner.temp }}/hyperfy-server.log" 2>&1 &
           echo $! > "${{ runner.temp }}/hyperfy-server.pid"
 
           for attempt in $(seq 1 60); do
