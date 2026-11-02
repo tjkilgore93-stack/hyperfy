@@ -155,8 +155,7 @@ export function createStripeBilling({ db, env = process.env, stripe: injectedStr
 
     if (
       event.type === 'checkout.session.completed' ||
-      event.type === 'checkout.session.async_payment_succeeded' ||
-      event.type === 'checkout.session.async_payment_failed'
+      event.type === 'checkout.session.async_payment_succeeded'
     ) {
       const session = event.data.object
       const paymentConfirmed = session.payment_status === 'paid' || session.payment_status === 'no_payment_required'
