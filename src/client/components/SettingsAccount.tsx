@@ -18,14 +18,14 @@ type AccountSession = {
 
 type SessionState = 'loading' | 'ready' | 'unavailable' | 'error'
 
-function formatDate(value?: string) {
+function formatDate(value) {
   if (!value) return 'Unknown'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Unknown'
   return date.toLocaleString()
 }
 
-function sessionDevice(session: AccountSession) {
+function sessionDevice(session) {
   if (session.deviceName || session.device) return session.deviceName || session.device
   const agent = session.userAgent || ''
   if (/iphone|ipad|ipod/i.test(agent)) return 'Apple mobile device'
@@ -36,7 +36,7 @@ function sessionDevice(session: AccountSession) {
   return 'Browser session'
 }
 
-function isMobileSession(session: AccountSession) {
+function isMobileSession(session) {
   return /iphone|ipad|ipod|android|mobile/i.test(
     [session.deviceName, session.device, session.userAgent].filter(Boolean).join(' ')
   )
@@ -47,23 +47,23 @@ function isMobileSession(session: AccountSession) {
  *
  * Display-name updates use the existing Player.setName network path.
  * Session inventory/revocation use the versioned API contract; the panel
- * deliberately reports an unavailable state until the server implements it.
+ * reads and revokes persistent sessions through the versioned server API.
  */
-export function SettingsAccount({ world, hidden }: { world: any; hidden?: boolean }) {
+export function SettingsAccount({ world, hidden }) {
   const player = world.entities.player
   const [name, setName] = useState(player?.data?.name || '')
   const [savingName, setSavingName] = useState(false)
   const [nameMessage, setNameMessage] = useState('')
-  const [sessions, setSessions] = useState<AccountSession[]>([])
-  const [sessionState, setSessionState] = useState<SessionState>('loading')
+  const [sessions, setSessions] = useState([])
+  const [sessionState, setSessionState] = useState('loading')
   const [sessionError, setSessionError] = useState('')
-  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState(null)
 
   const accountId = player?.data?.userId || player?.data?.id || 'Unavailable'
   const authToken = storage.get('authToken')
   const apiBase = (world.network.apiUrl || '').replace(/\/$/, '')
 
-  const loadSessions = useCallback(async (signal?: AbortSignal) => {
+  const loadSessions = useCallback(async signal => {
     if (!apiBase || !authToken) {
       setSessionState('unavailable')
       setSessionError('A signed-in session and API URL are required to load session records.')
@@ -91,7 +91,7 @@ export function SettingsAccount({ world, hidden }: { world: any; hidden?: boolea
       if (!response.ok) throw new Error(data.error || `Could not load sessions (${response.status}).`)
       setSessions(Array.isArray(data.sessions) ? data.sessions : [])
       setSessionState('ready')
-    } catch (error: any) {
+    } catch (error) {
       if (error?.name === 'AbortError') return
       setSessionState('error')
       setSessionError(error?.message || 'Could not load active sessions.')
@@ -361,7 +361,7 @@ export function SettingsAccount({ world, hidden }: { world: any; hidden?: boolea
           {sessionState === 'unavailable' && (
             <div className='account-notice'>
               <AlertCircleIcon size={15} />
-              <span>{sessionError} The current JWT implementation does not persist per-device session records, so this panel will not invent a device list or claim that revocation is active.</span>
+              <span>{sessionError} The server did not make session inventory available. No device list or revocation state is assumed.</span>
             </div>
           )}
           {sessionState === 'error' && (
@@ -415,7 +415,7 @@ export function SettingsAccount({ world, hidden }: { world: any; hidden?: boolea
   )
 }
 
-function Pane({ hidden, children }: { hidden?: boolean; children: any }) {
+function Pane({ hidden, children }) {
   return (
     <div
       className={`sidebarpane${hidden ? ' hidden' : ''}`}
