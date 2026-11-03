@@ -1,4 +1,4 @@
-import { readJWT } from '../core/utils-server'
+import { getValidSession } from './sessions'
 import { getBillingStatus, isBillingEnabled, startUserTrial, TRIAL_DURATION_DAYS } from '../core/billing'
 import {
   getProgressionStatus,
@@ -38,22 +38,58 @@ export async function registerMonetizationRoutes(fastify, { db, world }) {
     onUserUpdated: user => world.network.onUserBillingUpdated?.(user),
   })
 
-  // Resolve the signed-in user. Prefer the live session object so REST and realtime
-  // updates never overwrite each other.
-  async function getUser(req) {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.body?.authToken
+  // Resolve identity only from a persisted, non-revoked session.
+  async function getSessionContext(req) {
+    const token = req.headers.authorization?.replace(/^Bearer\\s+/i, '')
     if (!token) return null
-    let payload
-    try {
-      payload = await readJWT(token)
-    } catch {
-      return null
-    }
-    if (!payload?.userId) return null
-    const live = world.network.getLiveUser?.(payload.userId)
-    if (live) return live
-    return (await db('users').where('id', payload.userId).first()) || null
+    const valid = await getValidSession(db, token)
+    if (!valid) return null
+    const live = world.network.getLiveUser?.(valid.payload.userId)
+    const user = live || (await db('users').where('id', valid.payload.userId).first())
+    return user ? { user, session: valid.session } : null
   }
+
+  async function getUser(req) {
+    const context = await getSessionContext(req)
+    return context?.user || null
+  }
+
+  // Persistent session inventory and user-scoped revocation.
+  fastify.get('/v1/user/sessions', limit(30), async (req, reply) => {
+    try {
+      const context = await getSessionContext(req)
+      if (!context) return reply.code(401).send({ error: 'Unauthorized' })
+      const rows = await db('userSessions').where({ userId: context.user.id })
+        .whereNull('revokedAt').orderBy('lastSeenAt', 'desc')
+      return { success: true, sessions: rows.map(session => ({
+        id: session.id, deviceName: session.deviceName, userAgent: session.userAgent,
+        ipAddress: session.ipAddress, createdAt: session.createdAt,
+        lastSeenAt: session.lastSeenAt, current: session.id === context.session.id,
+      })) }
+    } catch (err) {
+      console.error('[sessions] failed to list sessions', err)
+      return reply.code(500).send({ error: 'Could not load sessions.' })
+    }
+  })
+
+  fastify.delete('/v1/user/sessions/:sessionId', limit(20), async (req, reply) => {
+    try {
+      const context = await getSessionContext(req)
+      if (!context) return reply.code(401).send({ error: 'Unauthorized' })
+      if (req.params.sessionId === context.session.id) {
+        return reply.code(400).send({ error: 'The current session cannot revoke itself.' })
+      }
+      const changed = await db('userSessions')
+        .where({ id: req.params.sessionId, userId: context.user.id })
+        .whereNull('revokedAt').update({ revokedAt: new Date().toISOString() })
+      if (!changed) return reply.code(404).send({ error: 'Session not found.' })
+      world.network.revokeSession?.(req.params.sessionId)
+      return { success: true, revoked: true }
+    } catch (err) {
+      console.error('[sessions] failed to revoke session', err)
+      return reply.code(500).send({ error: 'Could not revoke session.' })
+    }
+  })
 
   const billingStatus = user => getBillingStatus(user, { enabled: billingEnabled })
 
