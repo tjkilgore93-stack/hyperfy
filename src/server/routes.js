@@ -1,5 +1,5 @@
-import { getValidSession, touchSession } from './sessions'
-import { getBillingStatus, isBillingEnabled, startUserTrial, TRIAL_DURATION_DAYS } from '../core/billing'
+import { getValidSession, touchSession } from './sessions.js'
+import { getBillingStatus, isBillingEnabled, startUserTrial, TRIAL_DURATION_DAYS } from '../core/billing.js'
 import {
   getProgressionStatus,
   claimMission,
@@ -7,8 +7,8 @@ import {
   MISSIONS,
   COSMETIC_ITEMS,
   STORYLINE,
-} from '../core/progression'
-import { createStripeBilling, BillingError } from './stripe'
+} from '../core/progression.js'
+import { createStripeBilling, BillingError } from './stripe.js'
 
 const PUBLIC_PLANS = {
   free: {
