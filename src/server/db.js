@@ -474,6 +474,14 @@ const migrations = [
       table.text('equippedCosmetics').nullable()
     })
   },
+  // record Stripe webhook event IDs for transactional, cross-database idempotency
+  async db => {
+    await db.schema.createTable('processedStripeEvents', table => {
+      table.string('eventId').primary()
+      table.string('eventType').notNullable()
+      table.timestamp('processedAt', { useTz: true }).notNullable().defaultTo(db.fn.now())
+    })
+  },
   // persistent, per-world authenticated sessions (store token hashes only)
   async db => {
     await db.schema.createTable('userSessions', table => {
@@ -487,14 +495,6 @@ const migrations = [
       table.timestamp('lastSeenAt').notNullable()
       table.timestamp('revokedAt').nullable()
       table.index(['userId', 'revokedAt'])
-    })
-  },
-  // record Stripe webhook event IDs for transactional, cross-database idempotency
-  async db => {
-    await db.schema.createTable('processedStripeEvents', table => {
-      table.string('eventId').primary()
-      table.string('eventType').notNullable()
-      table.timestamp('processedAt', { useTz: true }).notNullable().defaultTo(db.fn.now())
     })
   },
 
