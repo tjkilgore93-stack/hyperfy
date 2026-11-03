@@ -37,6 +37,7 @@ import {
 import { cls } from './cls'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { MissionsPane } from './MissionsPane'
+import { SettingsAccount } from './SettingsAccount'
 import {
   FieldBtn,
   FieldCurve,
@@ -67,7 +68,7 @@ import { uuid } from '../../core/utils'
 import { useRank } from './useRank'
 import { Ranks } from '../../core/extras/ranks'
 
-const mainSectionPanes = ['prefs']
+const mainSectionPanes = ['prefs', 'account']
 const worldSectionPanes = ['world', 'docs', 'apps', 'add']
 const appSectionPanes = ['app', 'script', 'nodes', 'meta']
 
@@ -133,6 +134,13 @@ export function Sidebar({ world, ui }) {
               onClick={() => world.ui.togglePane('prefs')}
             >
               <MenuIcon size='1.25rem' />
+            </Btn>
+            <Btn
+              active={activePane === 'account'}
+              suspended={ui.pane === 'account' && !activePane}
+              onClick={() => world.ui.togglePane('account')}
+            >
+              <SettingsIcon size='1.25rem' />
             </Btn>
             <Btn
               active={activePane === 'players'}
@@ -252,6 +260,7 @@ export function Sidebar({ world, ui }) {
           )}
         </div>
         {ui.pane === 'prefs' && <Prefs world={world} hidden={!ui.active} />}
+        {ui.pane === 'account' && <SettingsAccount world={world} hidden={!ui.active} />}
         {ui.pane === 'world' && <World world={world} hidden={!ui.active} />}
         {ui.pane === 'apps' && <Apps world={world} hidden={!ui.active} />}
         {ui.pane === 'add' && <Add world={world} hidden={!ui.active} />}
