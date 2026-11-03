@@ -1,6 +1,6 @@
 import { css } from '@firebolt-dev/css'
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircleIcon, CheckCircle2Icon, Clock3Icon, LaptopIcon, LoaderIcon, LogOutIcon, MonitorIcon, RefreshCwIcon, ShieldCheckIcon, SmartphoneIcon, Trash2Icon } from 'lucide-react'
+import { AlertCircleIcon, CheckCircle2Icon, Clock3Icon, LaptopIcon, LoaderIcon, MonitorIcon, RefreshCwIcon, ShieldCheckIcon, SmartphoneIcon, Trash2Icon } from 'lucide-react'
 import { storage } from '../../core/storage'
 
 type AccountSession = {
