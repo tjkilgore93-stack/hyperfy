@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { createJWT, readJWT } from '../core/utils-server'
+import { createJWT, readJWT } from '../core/utils-server.js'
 
 export function hashSessionToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex')
