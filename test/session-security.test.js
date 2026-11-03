@@ -169,7 +169,9 @@ test('revoked and tampered bearer tokens cannot list or revoke sessions', async 
     })
     assert.equal(revoked.statusCode, 401)
 
-    const tamperedToken = `${target.token.slice(0, -1)}x`
+    const [header, payload, signature] = target.token.split('.')
+    const tamperedSignature = `${signature[0] === 'a' ? 'b' : 'a'}${signature.slice(1)}`
+    const tamperedToken = [header, payload, tamperedSignature].join('.')
     const tampered = await app.inject({
       method: 'DELETE',
       url: `/v1/user/sessions/${target.sessionId}`,
