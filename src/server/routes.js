@@ -1,4 +1,4 @@
-import { getValidSession } from './sessions'
+import { getValidSession, touchSession } from './sessions'
 import { getBillingStatus, isBillingEnabled, startUserTrial, TRIAL_DURATION_DAYS } from '../core/billing'
 import {
   getProgressionStatus,
@@ -44,6 +44,7 @@ export async function registerMonetizationRoutes(fastify, { db, world }) {
     if (!token) return null
     const valid = await getValidSession(db, token)
     if (!valid) return null
+    await touchSession(db, valid.session.id)
     const live = world.network.getLiveUser?.(valid.payload.userId)
     const user = live || (await db('users').where('id', valid.payload.userId).first())
     return user ? { user, session: valid.session } : null
