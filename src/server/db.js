@@ -474,6 +474,21 @@ const migrations = [
       table.text('equippedCosmetics').nullable()
     })
   },
+  // persistent, per-world authenticated sessions (store token hashes only)
+  async db => {
+    await db.schema.createTable('userSessions', table => {
+      table.string('id').primary()
+      table.string('userId').notNullable().references('id').inTable('users').onDelete('CASCADE')
+      table.string('tokenHash').notNullable().unique()
+      table.string('deviceName').nullable()
+      table.text('userAgent').nullable()
+      table.string('ipAddress').nullable()
+      table.timestamp('createdAt').notNullable()
+      table.timestamp('lastSeenAt').notNullable()
+      table.timestamp('revokedAt').nullable()
+      table.index(['userId', 'revokedAt'])
+    })
+  },
   // record Stripe webhook event IDs for transactional, cross-database idempotency
   async db => {
     await db.schema.createTable('processedStripeEvents', table => {
