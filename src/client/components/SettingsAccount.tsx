@@ -3,21 +3,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircleIcon, CheckCircle2Icon, Clock3Icon, LaptopIcon, LoaderIcon, MonitorIcon, RefreshCwIcon, ShieldCheckIcon, SmartphoneIcon, Trash2Icon } from 'lucide-react'
 import { storage } from '../../core/storage'
 
-type AccountSession = {
-  id: string
-  deviceName?: string
-  device?: string
-  userAgent?: string
-  ipAddress?: string
-  ip?: string
-  createdAt?: string
-  lastSeenAt?: string
-  current?: boolean
-  isCurrent?: boolean
-}
-
-type SessionState = 'loading' | 'ready' | 'unavailable' | 'error'
-
 function formatDate(value) {
   if (!value) return 'Unknown'
   const date = new Date(value)
@@ -122,14 +107,14 @@ export function SettingsAccount({ world, hidden }) {
       player.setName(nextName)
       setName(nextName)
       setNameMessage('Display name update submitted.')
-    } catch (error: any) {
+    } catch (error) {
       setNameMessage(error?.message || 'Could not update your display name.')
     } finally {
       setSavingName(false)
     }
   }
 
-  const revokeSession = async (session: AccountSession) => {
+  const revokeSession = async session => {
     if (!apiBase || !authToken || !session.id) return
     setRevokingId(session.id)
     setSessionError('')
@@ -145,7 +130,7 @@ export function SettingsAccount({ world, hidden }) {
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `Could not revoke session (${response.status}).`)
       await loadSessions()
-    } catch (error: any) {
+    } catch (error) {
       setSessionError(error?.message || 'Could not revoke this session.')
     } finally {
       setRevokingId(null)
