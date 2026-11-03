@@ -85,7 +85,7 @@ export async function registerMonetizationRoutes(fastify, { db, world }) {
   // World passes, toolkit licenses, cross-world ownership, and invoice history are
   // deliberately marked unavailable until authoritative data sources are implemented.
   fastify.get('/api/user/billing-profile', limit(30), async (req, reply) => {
-    const token = req.headers.authorization?.replace(/^Bearer\\s+/i, '')
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
     if (!token) return reply.code(401).send({ success: false, error: 'Unauthorized' })
 
     try {
