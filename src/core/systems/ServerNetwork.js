@@ -3,7 +3,7 @@ import { writePacket } from '../packets'
 import { Socket } from '../Socket'
 import { uuid } from '../utils'
 import { System } from './System'
-import { createJWT, readJWT } from '../utils-server'
+import { readJWT } from '../utils-server'
 import { getValidSession, issueSessionToken, touchSession } from '../../server/sessions'
 import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
@@ -288,6 +288,7 @@ export class ServerNetwork extends System {
           // Rotate legacy JWTs into persisted sessions during reconnect.
           const issued = await issueSessionToken(this.db, user.id, {
             userAgent: params.userAgent,
+            ipAddress: ws._socket?.remoteAddress || null,
           })
           authToken = issued.token
           sessionId = issued.sessionId
@@ -391,7 +392,8 @@ export class ServerNetwork extends System {
       // on the client these are sent during PlayerRemote.js entity instantiation!
       this.world.events.emit('enter', { playerId: socket.player.data.id })
     } catch (err) {
-      console.error(err)
+      console.error('[network] connection authentication/setup failed', err)
+      try { ws.close(1011, 'Connection setup failed') } catch {}
     }
   }
 
