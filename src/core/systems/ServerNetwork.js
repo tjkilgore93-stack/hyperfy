@@ -4,6 +4,7 @@ import { Socket } from '../Socket'
 import { uuid } from '../utils'
 import { System } from './System'
 import { createJWT, readJWT } from '../utils-server'
+import { getValidSession, issueSessionToken, touchSession } from '../../server/sessions'
 import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
@@ -261,16 +262,38 @@ export class ServerNetwork extends System {
       let name = params.name
       let avatar = params.avatar
 
-      // get or create user
+      // Resolve existing identity and require a live persistent session.
       let user
+      let sessionId = null
       if (authToken) {
-        try {
-          const { userId } = await readJWT(authToken)
-          user = await this.db('users').where('id', userId).first()
-        } catch (err) {
-          console.error('failed to read authToken:', authToken)
+        const payload = await readJWT(authToken)
+        if (!payload?.userId) {
+          ws.close(4001, 'Unauthorized')
+          return
+        }
+        user = await this.db('users').where('id', payload.userId).first()
+        if (!user) {
+          ws.close(4001, 'Unauthorized')
+          return
+        }
+        if (payload.sessionId) {
+          const valid = await getValidSession(this.db, authToken)
+          if (!valid) {
+            ws.close(4001, 'Session revoked or expired')
+            return
+          }
+          sessionId = valid.session.id
+          await touchSession(this.db, sessionId)
+        } else {
+          // Rotate legacy JWTs into persisted sessions during reconnect.
+          const issued = await issueSessionToken(this.db, user.id, {
+            userAgent: params.userAgent,
+          })
+          authToken = issued.token
+          sessionId = issued.sessionId
         }
       }
+
       if (user) {
         user.plan = user.plan || BillingPlans.FREE
         user.subscriptionStatus = user.subscriptionStatus || SubscriptionStatuses.INACTIVE
@@ -279,6 +302,7 @@ export class ServerNetwork extends System {
         user.unlockedCosmetics = user.unlockedCosmetics || JSON.stringify(DEFAULT_UNLOCKED_COSMETICS)
         user.missionProgress = user.missionProgress || JSON.stringify({})
       }
+
       if (!user) {
         user = {
           id: uuid(),
@@ -298,7 +322,11 @@ export class ServerNetwork extends System {
           createdAt: moment().toISOString(),
         }
         await this.db('users').insert(user)
-        authToken = await createJWT({ userId: user.id })
+        const issued = await issueSessionToken(this.db, user.id, {
+          userAgent: params.userAgent,
+        })
+        authToken = issued.token
+        sessionId = issued.sessionId
       }
 
       // disconnect if user already in this world
@@ -315,6 +343,7 @@ export class ServerNetwork extends System {
       // create socket
       const socket = new Socket({ id: user.id, ws, network: this })
       socket.user = user
+      socket.sessionId = sessionId
 
       // spawn player
       socket.player = this.world.entities.add(
@@ -911,6 +940,14 @@ export class ServerNetwork extends System {
 
   onPing = (socket, time) => {
     socket.send('pong', time)
+  }
+
+  revokeSession(sessionId) {
+    for (const socket of this.sockets.values()) {
+      if (socket.sessionId === sessionId) {
+        socket.ws.close(4001, 'Session revoked')
+      }
+    }
   }
 
   onDisconnect = (socket, code) => {
