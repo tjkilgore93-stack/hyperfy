@@ -40,7 +40,7 @@ export async function registerMonetizationRoutes(fastify, { db, world }) {
 
   // Resolve identity only from a persisted, non-revoked session.
   async function getSessionContext(req) {
-    const token = req.headers.authorization?.replace(/^Bearer\\s+/i, '')
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
     if (!token) return null
     const valid = await getValidSession(db, token)
     if (!valid) return null
