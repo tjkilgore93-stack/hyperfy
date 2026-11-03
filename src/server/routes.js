@@ -80,6 +80,72 @@ export async function registerMonetizationRoutes(fastify, { db, world }) {
     }
   })
 
+  // Read-only account billing profile for the unified settings dashboard.
+  // All records are resolved from the bearer-authenticated user in this world.
+  // World passes, toolkit licenses, cross-world ownership, and invoice history are
+  // deliberately marked unavailable until authoritative data sources are implemented.
+  fastify.get('/api/user/billing-profile', limit(30), async (req, reply) => {
+    const token = req.headers.authorization?.replace(/^Bearer\\s+/i, '')
+    if (!token) return reply.code(401).send({ success: false, error: 'Unauthorized' })
+
+    try {
+      const user = await getUser(req)
+      if (!user) return reply.code(401).send({ success: false, error: 'Unauthorized' })
+
+      const status = billingStatus(user)
+      const currentPeriodEnd = user.currentPeriodEnd
+        ? new Date(user.currentPeriodEnd).toISOString()
+        : null
+      const hasSubscriptionRecord = Boolean(user.stripeSubscriptionId || user.subscriptionPlan)
+
+      return {
+        success: true,
+        profile: {
+          userId: user.id,
+          displayName: user.name || null,
+          email: null,
+          emailAvailability: 'not_supported',
+        },
+        billing: {
+          ...status,
+          currentPeriodEnd,
+        },
+        worldAccess: {
+          status: 'current_world_only',
+          scope: 'current_world',
+          canExplore: status.canExplore,
+          canBuildAndHost: status.canBuildAndHost,
+          source: 'current_world_user_billing_record',
+        },
+        toolkitLicenses: {
+          status: 'not_configured',
+          items: [],
+        },
+        crossWorldAccess: {
+          status: 'not_configured',
+          items: [],
+        },
+        subscriptions: {
+          status: hasSubscriptionRecord ? 'current_subscription_recorded' : 'no_subscription_record',
+          current: hasSubscriptionRecord
+            ? {
+                plan: user.subscriptionPlan || null,
+                status: user.subscriptionStatus || 'inactive',
+                currentPeriodEnd,
+              }
+            : null,
+        },
+        history: {
+          status: 'not_available',
+          items: [],
+        },
+      }
+    } catch (err) {
+      console.error('[billing-profile] failed to load authenticated profile', err)
+      return reply.code(500).send({ success: false, error: 'Could not load billing profile.' })
+    }
+  })
+
   // Start 14-day trial (only when billing is enabled)
   fastify.post('/api/billing/start-trial', limit(30), async (req, reply) => {
     if (!billingEnabled) return reply.code(409).send({ error: 'Trials are not active on this world.' })
